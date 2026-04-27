@@ -1,74 +1,72 @@
-name: Clone Website
+name: Quick Download
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'Website URL'
+        description: 'URL'
         required: true
-        default: 'https://testphp.vulnweb.com'
+      type:
+        description: 'Type'
+        required: true
+        type: choice
+        options:
+          - Webpage
+          - Screenshot
+          - PDF
+          - Video
+          - Clone Full Site
+        default: 'Webpage'
 
 jobs:
-  clone:
+  download:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Clone with Wget
+      - name: Webpage
+        if: ${{ github.event.inputs.type == 'Webpage' }}
+        run: |
+          wget -q -O result.html "${{ github.event.inputs.url }}"
+          echo "Page saved: $(wc -c < result.html) bytes"
+
+      - name: Screenshot
+        if: ${{ github.event.inputs.type == 'Screenshot' }}
+        run: |
+          sudo apt-get install -y -q chromium-browser
+          pip install selenium -q
+          python3 -c "
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          opts = Options()
+          opts.add_argument('--headless')
+          driver = webdriver.Chrome(options=opts)
+          driver.get('${{ github.event.inputs.url }}')
+          driver.save_screenshot('screenshot.png')
+          driver.quit()
+          "
+          echo "Screenshot saved: $(ls -la screenshot.png | awk '{print \$5}') bytes"
+
+      - name: PDF
+        if: ${{ github.event.inputs.type == 'PDF' }}
+        run: |
+          sudo apt-get install -y -q wkhtmltopdf
+          wkhtmltopdf "${{ github.event.inputs.url }}" output.pdf
+          echo "PDF saved: $(ls -la output.pdf | awk '{print \$5}') bytes"
+
+      - name: Clone Site
+        if: ${{ github.event.inputs.type == 'Clone Full Site' }}
         run: |
           url="${{ github.event.inputs.url }}"
           name=$(echo "$url" | sed 's|https\?://||' | cut -d'/' -f1)
-          
-          echo "🌐 Cloning: $url"
-          echo "📁 Folder: $name"
-          echo "=========================================="
-          
-          # Wget کامل با همه چیز
-          wget \
-            --recursive \
-            --level=2 \
-            --no-clobber \
-            --page-requisites \
-            --adjust-extension \
-            --span-hosts \
-            --convert-links \
-            --restrict-file-names=windows \
-            --domains $(echo $url | cut -d'/' -f3) \
-            --no-parent \
-            --timeout=15 \
-            --tries=2 \
-            --directory-prefix=. \
-            --execute robots=off \
-            "$url" 2>&1 | tail -n 20
-          
-          # نشون بده چی دانلود شده
-          echo ""
-          echo "=========================================="
-          echo "📁 Downloaded files:"
-          find "$name"* -type f 2>/dev/null | head -n 30
-          
-          total_files=$(find "$name"* -type f 2>/dev/null | wc -l)
-          total_size=$(du -sh "${name}"* 2>/dev/null | head -n 1 | cut -f1)
-          echo ""
-          echo "✅ Files: $total_files"
-          echo "📏 Size: $total_size"
-          
-          # زیپ کن
-          zip -r "${name}.zip" "${name}"* 2>/dev/null || echo "No zip needed"
+          wget -r -l2 -p -k -np -nd --timeout=15 --tries=2 "$url" 2>&1 | tail -5
+          zip -r "${name}.zip" * 2>/dev/null
 
-      - name: Save to Repo
+      - name: Save
         run: |
-          git config user.name "Actions"
-          git config user.email "actions@github.com"
-          git add *.zip 2>/dev/null || git add . 2>/dev/null
-          git commit -m "Cloned website" || echo "Nothing to commit"
+          git config user.name "Bot"
+          git config user.email "bot@github.com"
+          git add -f result.html screenshot.png output.pdf *.zip 2>/dev/null
+          git commit -m "Downloaded" || echo "Nothing new"
           git push
-          
-      - name: Result
-        run: |
-          echo "=========================================="
-          echo "✅ DONE!"
-          echo "=========================================="
-          echo "Download: https://github.com/${{ github.repository }}"
-          echo "=========================================="
