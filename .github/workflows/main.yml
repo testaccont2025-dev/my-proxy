@@ -13,8 +13,6 @@ on:
         options:
           - Webpage
           - Screenshot
-          - PDF
-          - Video
           - Clone Full Site
         default: 'Webpage'
 
@@ -23,50 +21,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
 
       - name: Webpage
         if: ${{ github.event.inputs.type == 'Webpage' }}
         run: |
-          wget -q -O result.html "${{ github.event.inputs.url }}"
+          curl -L -o result.html "${{ github.event.inputs.url }}"
           echo "Page saved: $(wc -c < result.html) bytes"
 
       - name: Screenshot
         if: ${{ github.event.inputs.type == 'Screenshot' }}
         run: |
-          sudo apt-get install -y -q chromium-browser
+          sudo apt-get update -q && sudo apt-get install -y -q chromium-browser
           pip install selenium -q
           python3 -c "
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
           opts = Options()
           opts.add_argument('--headless')
+          opts.add_argument('--no-sandbox')
+          opts.add_argument('--disable-dev-shm-usage')
           driver = webdriver.Chrome(options=opts)
           driver.get('${{ github.event.inputs.url }}')
           driver.save_screenshot('screenshot.png')
           driver.quit()
           "
-          echo "Screenshot saved: $(ls -la screenshot.png | awk '{print \$5}') bytes"
 
-      - name: PDF
-        if: ${{ github.event.inputs.type == 'PDF' }}
-        run: |
-          sudo apt-get install -y -q wkhtmltopdf
-          wkhtmltopdf "${{ github.event.inputs.url }}" output.pdf
-          echo "PDF saved: $(ls -la output.pdf | awk '{print \$5}') bytes"
-
-      - name: Clone Site
+      - name: Clone
         if: ${{ github.event.inputs.type == 'Clone Full Site' }}
         run: |
           url="${{ github.event.inputs.url }}"
           name=$(echo "$url" | sed 's|https\?://||' | cut -d'/' -f1)
-          wget -r -l2 -p -k -np -nd --timeout=15 --tries=2 "$url" 2>&1 | tail -5
-          zip -r "${name}.zip" * 2>/dev/null
+          mkdir -p "$name"
+          cd "$name"
+          wget -r -l1 -p -k -np --timeout=15 --tries=2 "$url" 2>&1 | tail -5
+          cd ..
+          zip -r "${name}.zip" "$name"
 
       - name: Save
         run: |
           git config user.name "Bot"
           git config user.email "bot@github.com"
-          git add -f result.html screenshot.png output.pdf *.zip 2>/dev/null
-          git commit -m "Downloaded" || echo "Nothing new"
-          git push
+          git add -f result.html screenshot.png *.zip 2>/dev/null
+          git commit -m "Downloaded" || echo "Nothing to commit"
+          git push || echo "Push failed — download from Actions tab"
