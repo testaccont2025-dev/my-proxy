@@ -1,0 +1,74 @@
+name: Clone Website
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: 'Website URL'
+        required: true
+        default: 'https://testphp.vulnweb.com'
+
+jobs:
+  clone:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Clone with Wget
+        run: |
+          url="${{ github.event.inputs.url }}"
+          name=$(echo "$url" | sed 's|https\?://||' | cut -d'/' -f1)
+          
+          echo "🌐 Cloning: $url"
+          echo "📁 Folder: $name"
+          echo "=========================================="
+          
+          # Wget کامل با همه چیز
+          wget \
+            --recursive \
+            --level=2 \
+            --no-clobber \
+            --page-requisites \
+            --adjust-extension \
+            --span-hosts \
+            --convert-links \
+            --restrict-file-names=windows \
+            --domains $(echo $url | cut -d'/' -f3) \
+            --no-parent \
+            --timeout=15 \
+            --tries=2 \
+            --directory-prefix=. \
+            --execute robots=off \
+            "$url" 2>&1 | tail -n 20
+          
+          # نشون بده چی دانلود شده
+          echo ""
+          echo "=========================================="
+          echo "📁 Downloaded files:"
+          find "$name"* -type f 2>/dev/null | head -n 30
+          
+          total_files=$(find "$name"* -type f 2>/dev/null | wc -l)
+          total_size=$(du -sh "${name}"* 2>/dev/null | head -n 1 | cut -f1)
+          echo ""
+          echo "✅ Files: $total_files"
+          echo "📏 Size: $total_size"
+          
+          # زیپ کن
+          zip -r "${name}.zip" "${name}"* 2>/dev/null || echo "No zip needed"
+
+      - name: Save to Repo
+        run: |
+          git config user.name "Actions"
+          git config user.email "actions@github.com"
+          git add *.zip 2>/dev/null || git add . 2>/dev/null
+          git commit -m "Cloned website" || echo "Nothing to commit"
+          git push
+          
+      - name: Result
+        run: |
+          echo "=========================================="
+          echo "✅ DONE!"
+          echo "=========================================="
+          echo "Download: https://github.com/${{ github.repository }}"
+          echo "=========================================="
