@@ -1,69 +1,63 @@
-name: Quick Download
+name: Screenshot
 
 on:
   workflow_dispatch:
     inputs:
       url:
-        description: 'URL'
+        description: 'Website URL'
         required: true
-      type:
-        description: 'Type'
-        required: true
-        type: choice
-        options:
-          - Webpage
-          - Screenshot
-          - Clone Full Site
-        default: 'Webpage'
+        default: 'https://fa.wikipedia.org'
 
 jobs:
-  download:
+  screenshot:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
-
-      - name: Webpage
-        if: ${{ github.event.inputs.type == 'Webpage' }}
+      - name: Take Full Page Screenshot
         run: |
-          curl -L -o result.html "${{ github.event.inputs.url }}"
-          echo "Page saved: $(wc -c < result.html) bytes"
-
-      - name: Screenshot
-        if: ${{ github.event.inputs.type == 'Screenshot' }}
-        run: |
-          sudo apt-get update -q && sudo apt-get install -y -q chromium-browser
+          sudo apt-get update -q
+          sudo apt-get install -y -q chromium-browser
           pip install selenium -q
-          python3 -c "
+          
+          python3 << 'EOF'
           from selenium import webdriver
           from selenium.webdriver.chrome.options import Options
-          opts = Options()
-          opts.add_argument('--headless')
-          opts.add_argument('--no-sandbox')
-          opts.add_argument('--disable-dev-shm-usage')
-          driver = webdriver.Chrome(options=opts)
-          driver.get('${{ github.event.inputs.url }}')
-          driver.save_screenshot('screenshot.png')
+          import base64, time
+
+          url = "${{ github.event.inputs.url }}"
+          
+          options = Options()
+          options.add_argument("--headless")
+          options.add_argument("--no-sandbox")
+          options.add_argument("--disable-dev-shm-usage")
+          options.add_argument("--window-size=1920,1080")
+          
+          print(f"📸 Opening: {url}")
+          
+          driver = webdriver.Chrome(options=options)
+          driver.get(url)
+          
+          # ۳ ثانیه صبر برای لود کامل
+          print("⏳ Waiting 3 seconds...")
+          time.sleep(3)
+          
+          # گرفتن ارتفاع کل صفحه
+          total_height = driver.execute_script("return document.body.scrollHeight")
+          print(f"📏 Page height: {total_height}px")
+          
+          # تنظیم پنجره به اندازه کل صفحه
+          driver.set_window_size(1920, total_height)
+          time.sleep(1)
+          
+          # اسکرین‌شات
+          print("📸 Capturing...")
+          screenshot = driver.get_screenshot_as_base64()
           driver.quit()
-          "
-
-      - name: Clone
-        if: ${{ github.event.inputs.type == 'Clone Full Site' }}
-        run: |
-          url="${{ github.event.inputs.url }}"
-          name=$(echo "$url" | sed 's|https\?://||' | cut -d'/' -f1)
-          mkdir -p "$name"
-          cd "$name"
-          wget -r -l1 -p -k -np --timeout=15 --tries=2 "$url" 2>&1 | tail -5
-          cd ..
-          zip -r "${name}.zip" "$name"
-
-      - name: Save
-        run: |
-          git config user.name "Bot"
-          git config user.email "bot@github.com"
-          git add -f result.html screenshot.png *.zip 2>/dev/null
-          git commit -m "Downloaded" || echo "Nothing to commit"
-          git push || echo "Push failed — download from Actions tab"
+          
+          print(f"✅ Size: {len(screenshot)} chars")
+          print("=" * 60)
+          print("📷 COPY FROM BELOW:")
+          print(screenshot)
+          print("📷 COPY ABOVE THIS LINE")
+          print("=" * 60)
+          print("Paste in browser: data:image/png;base64,PASTE_HERE")
+          EOF
